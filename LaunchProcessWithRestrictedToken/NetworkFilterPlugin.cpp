@@ -125,25 +125,35 @@ void NetworkFilterPlugin::SetAllowedDomains(const std::vector<std::wstring>& dom
 
     g_State.allowedDomains.clear();
 
+    const wchar_t* modeStr = (g_State.filterMode == FilterMode::Whitelist) ? L"Whitelist" : L"Blacklist";
+
     for (const auto& domain : domains) {
         DomainPattern dp;
         dp.pattern = domain;
         dp.hasWildcard = (domain.find(L'*') != std::wstring::npos);
 
         g_State.allowedDomains.push_back(dp);
-        LogInfo(L"[NetworkFilterPlugin] Allowed domain: %ls (wildcard=%d)",
-            domain.c_str(), dp.hasWildcard ? 1 : 0);
+        LogInfo(L"[NetworkFilterPlugin] [%ls] Domain: %ls (wildcard=%d)",
+            modeStr, domain.c_str(), dp.hasWildcard ? 1 : 0);
     }
 
-    LogInfo(L"[NetworkFilterPlugin] Total %llu allowed domains configured.",
-        (unsigned long long)g_State.allowedDomains.size());
+    LogInfo(L"[NetworkFilterPlugin] Total %llu domains configured in %ls mode.",
+        (unsigned long long)g_State.allowedDomains.size(), modeStr);
 
-    LogProxyInfo(L"--- Allowed domain rules (%llu) ---",
-        (unsigned long long)g_State.allowedDomains.size());
+    LogProxyInfo(L"--- %ls domain rules (%llu) ---",
+        modeStr, (unsigned long long)g_State.allowedDomains.size());
     for (const auto& dp : g_State.allowedDomains) {
         LogProxyInfo(L"  %ls %ls", dp.hasWildcard ? L"[wildcard]" : L"  [exact]", dp.pattern.c_str());
     }
     LogProxyInfo(L"--- End of domain rules ---");
+}
+
+void NetworkFilterPlugin::SetFilterMode(FilterMode mode) {
+    std::lock_guard<std::mutex> lock(g_State.mutex);
+    g_State.filterMode = mode;
+    const wchar_t* modeStr = (mode == FilterMode::Whitelist) ? L"Whitelist" : L"Blacklist";
+    LogInfo(L"[NetworkFilterPlugin] Filter mode set to: %ls", modeStr);
+    LogProxyInfo(L"========== Filter mode: %ls ==========", modeStr);
 }
 
 bool NetworkFilterPlugin::IsRunning() {
@@ -234,11 +244,11 @@ bool NetworkFilterPlugin::ParseRequestLine(const std::string& line,
     return true;
 }
 
-// [FIX] Ô­ ExtractDomainFromUrl »áÔÚµÚÒ»¸ö ':' ´¦½Ø¶Ï£¬µ¼ÖÂ¶Ë¿Ú¶ªÊ§
-// ĞÂ°æ±¾±£ÁôÍêÕûµÄ host:port ²¿·Ö£¬Ö»È¥µô scheme ºÍ path
-// CONNECT "example.com:443"            ¡ú "example.com:443"
-// GET     "http://example.com/path"    ¡ú "example.com"
-// GET     "http://example.com:8080/p"  ¡ú "example.com:8080"
+// [FIX] Ô­ ExtractDomainFromUrl ï¿½ï¿½ï¿½Úµï¿½Ò»ï¿½ï¿½ ':' ï¿½ï¿½ï¿½Ø¶Ï£ï¿½ï¿½ï¿½ï¿½Â¶Ë¿Ú¶ï¿½Ê§
+// ï¿½Â°æ±¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ host:port ï¿½ï¿½ï¿½Ö£ï¿½Ö»È¥ï¿½ï¿½ scheme ï¿½ï¿½ path
+// CONNECT "example.com:443"            ï¿½ï¿½ "example.com:443"
+// GET     "http://example.com/path"    ï¿½ï¿½ "example.com"
+// GET     "http://example.com:8080/p"  ï¿½ï¿½ "example.com:8080"
 std::string NetworkFilterPlugin::ExtractHostPortFromUrl(const std::string& url) {
     if (url.empty()) return "";
 
@@ -251,7 +261,7 @@ std::string NetworkFilterPlugin::ExtractHostPortFromUrl(const std::string& url) 
 
     if (start >= url.size()) return "";
 
-    // [FIX] Ö»ÓÃ '/' ×÷Îª½áÊø·û£¬±£Áô host:port ÖĞµÄÃ°ºÅ
+    // [FIX] Ö»ï¿½ï¿½ '/' ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ host:port ï¿½Ğµï¿½Ã°ï¿½ï¿½
     size_t end = url.find('/', start);
     if (end == std::string::npos) {
         end = url.size();
@@ -262,7 +272,7 @@ std::string NetworkFilterPlugin::ExtractHostPortFromUrl(const std::string& url) 
     return url.substr(start, end - start);
 }
 
-// [FIX] ´Ó "host:port" ×Ö·û´®ÖĞ·ÖÀë³ö host ºÍ port
+// [FIX] ï¿½ï¿½ "host:port" ï¿½Ö·ï¿½ï¿½ï¿½ï¿½Ğ·ï¿½ï¿½ï¿½ï¿½ host ï¿½ï¿½ port
 void NetworkFilterPlugin::SplitHostPort(const std::string& hostPort,
     std::string& host, int& port,
     int defaultPort) {
@@ -271,11 +281,11 @@ void NetworkFilterPlugin::SplitHostPort(const std::string& hostPort,
 
     if (hostPort.empty()) return;
 
-    // IPv6 µØÖ·: [::1]:port
+    // IPv6 ï¿½ï¿½Ö·: [::1]:port
     if (hostPort[0] == '[') {
         size_t bracketEnd = hostPort.find(']');
         if (bracketEnd != std::string::npos) {
-            host = hostPort.substr(1, bracketEnd - 1);  // È¥µô·½À¨ºÅ
+            host = hostPort.substr(1, bracketEnd - 1);  // È¥ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
             if (bracketEnd + 1 < hostPort.size() && hostPort[bracketEnd + 1] == ':') {
                 std::string portStr = hostPort.substr(bracketEnd + 2);
                 bool allDigits = !portStr.empty();
@@ -436,7 +446,7 @@ bool NetworkFilterPlugin::HandleClientConnection(void* clientSocket) {
         return false;
     }
 
-    // [FIX] Ê¹ÓÃĞÂº¯ÊıÌáÈ¡ÍêÕû host:port
+    // [FIX] Ê¹ï¿½ï¿½ï¿½Âºï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ host:port
     std::string hostPort = ExtractHostPortFromUrl(url);
     if (hostPort.empty()) {
         LogProxyError(L"Could not extract host from URL");
@@ -445,7 +455,7 @@ bool NetworkFilterPlugin::HandleClientConnection(void* clientSocket) {
         return false;
     }
 
-    // [FIX] CONNECT Ä¬ÈÏ 443£¬ÆäËû HTTP ·½·¨Ä¬ÈÏ 80
+    // [FIX] CONNECT Ä¬ï¿½ï¿½ 443ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ HTTP ï¿½ï¿½ï¿½ï¿½Ä¬ï¿½ï¿½ 80
     bool isConnect = (_stricmp(method.c_str(), "CONNECT") == 0);
     int defaultPort = isConnect ? 443 : 80;
 
@@ -453,28 +463,47 @@ bool NetworkFilterPlugin::HandleClientConnection(void* clientSocket) {
     int port = defaultPort;
     SplitHostPort(hostPort, host, port, defaultPort);
 
-    // ÓÃ²»º¬¶Ë¿ÚµÄ´¿ÓòÃû×ö°×Ãûµ¥Æ¥Åä
+    // ï¿½Ã²ï¿½ï¿½ï¿½ï¿½Ë¿ÚµÄ´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ¥ï¿½ï¿½
     std::wstring domainW = StringToWide(host);
 
-    bool allowed = false;
+    bool matched = false;
     std::wstring matchedPatternStr;
     {
         std::lock_guard<std::mutex> lock(g_State.mutex);
         for (const auto& pattern : g_State.allowedDomains) {
             if (MatchDomainPattern(pattern.pattern, domainW)) {
                 matchedPatternStr = pattern.pattern;
-                allowed = true;
+                matched = true;
                 break;
             }
         }
     }
 
     std::wstring methodW = StringToWide(method);
+
+    // æ ¹æ®è¿‡æ»¤æ¨¡å¼å†³å®šæ˜¯å¦å…è®¸è®¿é—®
+    bool allowed = false;
+    if (g_State.filterMode == FilterMode::Whitelist) {
+        // ç™½åå•æ¨¡å¼ï¼šåŒ¹é…åˆ™å…è®¸ï¼Œä¸åŒ¹é…åˆ™é˜»æ­¢
+        allowed = matched;
+    } else {
+        // é»‘åå•æ¨¡å¼ï¼šåŒ¹é…åˆ™é˜»æ­¢ï¼Œä¸åŒ¹é…åˆ™å…è®¸
+        allowed = !matched;
+    }
+
     if (allowed) {
-        LogProxyAllow(methodW.c_str(), domainW.c_str(), matchedPatternStr.c_str());
+        if (g_State.filterMode == FilterMode::Whitelist) {
+            LogProxyAllow(methodW.c_str(), domainW.c_str(), matchedPatternStr.c_str());
+        } else {
+            LogProxyAllow(methodW.c_str(), domainW.c_str(), L"not in blacklist");
+        }
     }
     else {
-        LogProxyBlock(methodW.c_str(), domainW.c_str(), L"no matching rule");
+        if (g_State.filterMode == FilterMode::Whitelist) {
+            LogProxyBlock(methodW.c_str(), domainW.c_str(), L"not in whitelist");
+        } else {
+            LogProxyBlock(methodW.c_str(), domainW.c_str(), matchedPatternStr.c_str());
+        }
         SendErrorResponse(clientSocket, 403, "Forbidden",
             "Access to this domain is not allowed by network filter");
         cleanup();
@@ -511,7 +540,7 @@ bool NetworkFilterPlugin::HandleClientConnection(void* clientSocket) {
         SOCKET server = (SOCKET)serverSocket;
         std::string fullRequest = requestLine + "\r\n";
 
-        // ¶ÁÈ¡ÇëÇóÍ·, Í¬Ê±½âÎö Content-Length ºÍ Transfer-Encoding
+        // ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Í·, Í¬Ê±ï¿½ï¿½ï¿½ï¿½ Content-Length ï¿½ï¿½ Transfer-Encoding
         long long contentLength = -1;
         bool chunkedEncoding = false;
 
@@ -546,10 +575,10 @@ bool NetworkFilterPlugin::HandleClientConnection(void* clientSocket) {
         }
         fullRequest += "\r\n";
 
-        // ·¢ËÍÇëÇóÍ·
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í·
         send(server, fullRequest.c_str(), (int)fullRequest.size(), 0);
 
-        // ×ª·¢ÇëÇóÌå
+        // ×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         if (chunkedEncoding) {
             ForwardChunkedBody(clientSocket, serverSocket);
         }
@@ -557,7 +586,7 @@ bool NetworkFilterPlugin::HandleClientConnection(void* clientSocket) {
             ForwardRequestBody(clientSocket, serverSocket, contentLength);
         }
 
-        // ¶ÁÈ¡·şÎñÆ÷ÏìÓ¦²¢×ª·¢»Ø¿Í»§¶Ë
+        // ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½×ªï¿½ï¿½ï¿½Ø¿Í»ï¿½ï¿½ï¿½
         ForwardData(serverSocket, clientSocket);
 
         closesocket(server);
@@ -607,7 +636,7 @@ bool NetworkFilterPlugin::ForwardChunkedBody(void* src, void* dst) {
     char buffer[8192];
 
     while (g_State.running) {
-        // 1) ¶ÁÈ¡ chunk ´óĞ¡ĞĞ
+        // 1) ï¿½ï¿½È¡ chunk ï¿½ï¿½Ğ¡ï¿½ï¿½
         std::string sizeLine = ReadLine(src);
         std::string sizeLineRaw = sizeLine + "\r\n";
         if (send(d, sizeLineRaw.c_str(), (int)sizeLineRaw.size(), 0) <= 0) {
@@ -615,7 +644,7 @@ bool NetworkFilterPlugin::ForwardChunkedBody(void* src, void* dst) {
             return false;
         }
 
-        // 2) ½âÎö chunk ´óĞ¡
+        // 2) ï¿½ï¿½ï¿½ï¿½ chunk ï¿½ï¿½Ğ¡
         long long chunkSize = 0;
         try {
             std::string hexPart = sizeLine;
@@ -633,7 +662,7 @@ bool NetworkFilterPlugin::ForwardChunkedBody(void* src, void* dst) {
             return false;
         }
 
-        // 3) ÖÕÖ¹ chunk
+        // 3) ï¿½ï¿½Ö¹ chunk
         if (chunkSize == 0) {
             std::string trailerLine;
             while (!(trailerLine = ReadLine(src)).empty()) {
@@ -645,7 +674,7 @@ bool NetworkFilterPlugin::ForwardChunkedBody(void* src, void* dst) {
             return true;
         }
 
-        // 4) ¶ÁÈ¡²¢×ª·¢ chunk Êı¾İ
+        // 4) ï¿½ï¿½È¡ï¿½ï¿½×ªï¿½ï¿½ chunk ï¿½ï¿½ï¿½ï¿½
         SOCKET s = (SOCKET)src;
         long long remaining = chunkSize;
         while (remaining > 0) {
@@ -669,7 +698,7 @@ bool NetworkFilterPlugin::ForwardChunkedBody(void* src, void* dst) {
             remaining -= recvLen;
         }
 
-        // 5) chunk Êı¾İºóµÄ \r\n
+        // 5) chunk ï¿½ï¿½ï¿½İºï¿½ï¿½ \r\n
         std::string chunkEnd = ReadLine(src);
         std::string chunkEndRaw = chunkEnd + "\r\n";
         send(d, chunkEndRaw.c_str(), (int)chunkEndRaw.size(), 0);
@@ -762,7 +791,7 @@ bool NetworkFilterPlugin::ForwardData(void* src, void* dst) {
     return true;
 }
 
-// [FIX] Ã¿¸öÁ¬½Ó¶ÀÁ¢Ïß³ÌÈë¿Ú
+// [FIX] Ã¿ï¿½ï¿½ï¿½ï¿½ï¿½Ó¶ï¿½ï¿½ï¿½ï¿½ß³ï¿½ï¿½ï¿½ï¿½
 unsigned long __stdcall NetworkFilterPlugin::ClientConnectionThread(void* param) {
     SOCKET clientSocket = (SOCKET)(uintptr_t)param;
     HandleClientConnection((void*)clientSocket);
@@ -798,11 +827,11 @@ unsigned long __stdcall NetworkFilterPlugin::ProxyServerThread(void* param) {
             clientIp & 0xFF, (clientIp >> 8) & 0xFF,
             (clientIp >> 16) & 0xFF, (clientIp >> 24) & 0xFF);
 
-        // [FIX] Ã¿¸öÁ¬½Ó´´½¨¶ÀÁ¢Ïß³Ì£¬²»ÔÙ×èÈû accept Ñ­»·
+        // [FIX] Ã¿ï¿½ï¿½ï¿½ï¿½ï¿½Ó´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ß³Ì£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ accept Ñ­ï¿½ï¿½
         HANDLE hThread = CreateThread(nullptr, 0, ClientConnectionThread,
             (void*)(uintptr_t)clientSocket, 0, nullptr);
         if (hThread) {
-            CloseHandle(hThread);  // ·ÖÀëÏß³Ì£¬×ÔĞĞ½áÊø
+            CloseHandle(hThread);  // ï¿½ï¿½ï¿½ï¿½ï¿½ß³Ì£ï¿½ï¿½ï¿½ï¿½Ğ½ï¿½ï¿½ï¿½
         }
         else {
             LogError(L"[NetworkFilterPlugin] CreateThread for client failed: %d", GetLastError());

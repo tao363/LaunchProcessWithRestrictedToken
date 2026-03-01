@@ -21,6 +21,8 @@
 #pragma comment(lib, "Advapi32.lib")
 
 #include "NetworkFilterPlugin.h"
+#include "NetworkControlManager.h"
+#include "ConfigReader.h"
 
 #ifndef CP_UTF8
 #define CP_UTF8 65001
@@ -119,6 +121,9 @@ static bool g_LogEnabled = false;
 static bool g_NetworkFilterEnabled = false;
 static int  g_NetworkFilterPort = 8080;
 static std::wstring g_NetworkFilterAllowedUrls;
+
+// Network Control Manager (new unified control)
+static NetworkControlManager g_NetworkControlManager;
 
 // Bun Virtual Drive (B:\~BUN) state
 static volatile LONG g_BunCleanupDone = 0;
@@ -2368,26 +2373,82 @@ static bool LoadConfigFromIniIfNoArgs(int argc) {
 // ========================================================================
 static bool InitializeNetworkFilter() {
 	if (!g_NetworkFilterEnabled) return true;
-	auto domains = ParseNetworkFilterUrls(g_NetworkFilterAllowedUrls);
-	if (domains.empty()) LogWarn(L"[NetworkFilter] Enabled but no allowed URLs. All requests BLOCKED.");
-	NetworkFilterPlugin::SetAllowedDomains(domains);
-	if (!NetworkFilterPlugin::Initialize(g_NetworkFilterPort)) {
-		LogError(L"[NetworkFilter] Failed to initialize proxy on port %d", g_NetworkFilterPort);
+
+	// 获取配置文件路径
+	std::wstring configPath = GetExeDir() + L"config.ini";
+
+	// 加载配置
+	if (!g_NetworkControlManager.LoadConfig(configPath)) {
+		LogWarn(L"[NetworkFilter] Failed to load config, using legacy mode");
+
+		// 回退到旧的方式（仅代理，无强制控制）
+		auto domains = ParseNetworkFilterUrls(g_NetworkFilterAllowedUrls);
+		if (domains.empty()) LogWarn(L"[NetworkFilter] Enabled but no allowed URLs. All requests BLOCKED.");
+		NetworkFilterPlugin::SetAllowedDomains(domains);
+		if (!NetworkFilterPlugin::Initialize(g_NetworkFilterPort)) {
+			LogError(L"[NetworkFilter] Failed to initialize proxy on port %d", g_NetworkFilterPort);
+			return false;
+		}
+		LogInfo(L"[NetworkFilter] Proxy started on %ls (legacy mode, can be bypassed)",
+			NetworkFilterPlugin::GetProxyUrl().c_str());
+		return true;
+	}
+
+	// 获取目标程序的完整路径
+	std::wstring exePath = ResolveExeFullPath(ExeToLaunch);
+	if (exePath.empty()) {
+		LogError(L"[NetworkFilter] Cannot resolve exe path for network control");
 		return false;
 	}
-	LogInfo(L"[NetworkFilter] Proxy started on %ls", NetworkFilterPlugin::GetProxyUrl().c_str());
+
+	// 读取控制模式配置
+	ConfigReader configReader;
+	configReader.Load(configPath);
+	std::wstring controlMode = configReader.GetString(L"NetworkControl", L"ControlMode", L"Process");
+	std::transform(controlMode.begin(), controlMode.end(), controlMode.begin(), ::towlower);
+
+	// 使用新的网络控制管理器初始化
+	bool initSuccess = false;
+	if (controlMode == L"global") {
+		LogInfo(L"[NetworkFilter] Using GLOBAL control mode (all processes)");
+		initSuccess = g_NetworkControlManager.InitializeGlobal();
+	} else {
+		LogInfo(L"[NetworkFilter] Using PROCESS control mode (single process only)");
+		initSuccess = g_NetworkControlManager.Initialize(exePath);
+	}
+
+	if (!initSuccess) {
+		LogError(L"[NetworkFilter] Failed to initialize network control");
+		return false;
+	}
+
+	LogInfo(L"[NetworkFilter] Network control initialized successfully");
 	return true;
 }
 
 static void ShutdownNetworkFilter() {
-	if (g_NetworkFilterEnabled && NetworkFilterPlugin::IsRunning()) {
-		NetworkFilterPlugin::Shutdown();
+	if (g_NetworkFilterEnabled) {
+		if (g_NetworkControlManager.IsInitialized()) {
+			g_NetworkControlManager.Cleanup();
+		} else if (NetworkFilterPlugin::IsRunning()) {
+			// 回退模式的清理
+			NetworkFilterPlugin::Shutdown();
+		}
 	}
 }
 
 static void InjectProxyEnvVars() {
-	if (!g_NetworkFilterEnabled || !NetworkFilterPlugin::IsRunning()) return;
-	std::wstring proxyUrl = NetworkFilterPlugin::GetProxyUrl();
+	if (!g_NetworkFilterEnabled) return;
+
+	std::wstring proxyUrl;
+	if (g_NetworkControlManager.IsInitialized()) {
+		proxyUrl = g_NetworkControlManager.GetProxyUrl();
+	} else if (NetworkFilterPlugin::IsRunning()) {
+		proxyUrl = NetworkFilterPlugin::GetProxyUrl();
+	} else {
+		return;
+	}
+
 	UpsertEnvOverride(L"HTTP_PROXY", proxyUrl);
 	UpsertEnvOverride(L"HTTPS_PROXY", proxyUrl);
 	UpsertEnvOverride(L"http_proxy", proxyUrl);

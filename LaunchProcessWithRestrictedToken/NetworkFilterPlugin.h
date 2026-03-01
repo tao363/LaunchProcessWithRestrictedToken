@@ -23,16 +23,23 @@ struct DomainPattern {
     bool hasWildcard;
 };
 
+enum class FilterMode {
+    Whitelist,  // ç™½åå•æ¨¡å¼ï¼šåªå…è®¸åˆ—è¡¨ä¸­çš„åŸŸå
+    Blacklist   // é»‘åå•æ¨¡å¼ï¼šé˜»æ­¢åˆ—è¡¨ä¸­çš„åŸŸåï¼Œå…è®¸å…¶ä»–æ‰€æœ‰åŸŸå
+};
+
 struct NetworkFilterState {
     std::atomic<bool> running;
     std::atomic<int> activeConnections;
     int port;
-    std::vector<DomainPattern> allowedDomains;
+    std::vector<DomainPattern> allowedDomains;  // ç™½åå•æ¨¡å¼ï¼šå…è®¸çš„åŸŸåï¼›é»‘åå•æ¨¡å¼ï¼šé˜»æ­¢çš„åŸŸå
+    FilterMode filterMode;
     void* listenSocket;
     void* serverThread;
     std::mutex mutex;
 
-    NetworkFilterState() : running(false), activeConnections(0), port(8080), listenSocket(nullptr), serverThread(nullptr) {}
+    NetworkFilterState() : running(false), activeConnections(0), port(8080),
+                          filterMode(FilterMode::Whitelist), listenSocket(nullptr), serverThread(nullptr) {}
 };
 
 class NetworkFilterPlugin {
@@ -42,6 +49,8 @@ public:
     static void Shutdown();
 
     static void SetAllowedDomains(const std::vector<std::wstring>& domains);
+
+    static void SetFilterMode(FilterMode mode);
 
     static bool IsRunning();
 
@@ -63,10 +72,10 @@ private:
         std::string& url,
         std::string& version);
 
-    // [FIX] ÌáÈ¡ÍêÕû host:port£¬²»ÔÙ¶ªÆú¶Ë¿ÚĞÅÏ¢
+    // [FIX] ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ host:portï¿½ï¿½ï¿½ï¿½ï¿½Ù¶ï¿½ï¿½ï¿½ï¿½Ë¿ï¿½ï¿½ï¿½Ï¢
     static std::string ExtractHostPortFromUrl(const std::string& url);
 
-    // [FIX] ´Ó "host:port" ×Ö·û´®·ÖÀë³ö host ºÍ port
+    // [FIX] ï¿½ï¿½ "host:port" ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ host ï¿½ï¿½ port
     static void SplitHostPort(const std::string& hostPort, std::string& host, int& port, int defaultPort);
 
     static std::string ReadLine(void* sock);
@@ -83,7 +92,7 @@ private:
     static bool ForwardRequestBody(void* src, void* dst, long long contentLength);
     static bool ForwardChunkedBody(void* src, void* dst);
 
-    // [FIX] Ã¿¸öÁ¬½Ó¶ÀÁ¢Ïß³Ì´¦Àí
+    // [FIX] Ã¿ï¿½ï¿½ï¿½ï¿½ï¿½Ó¶ï¿½ï¿½ï¿½ï¿½ß³Ì´ï¿½ï¿½ï¿½
     static unsigned long __stdcall ClientConnectionThread(void* param);
     static unsigned long __stdcall ProxyServerThread(void* param);
 };

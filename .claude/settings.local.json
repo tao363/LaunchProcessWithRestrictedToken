@@ -5,7 +5,13 @@
       "Bash(./LaunchProcessWithRestrictedToken.exe:*)",
       "Bash(sleep 2:*)",
       "Bash(ls:*)",
-      "Bash(./opencode.exe:*)"
+      "Bash(./opencode.exe:*)",
+      "WebSearch",
+      "Bash(powershell.exe:*)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\":*)",
+      "Bash(\"C:\\\\Program Files \\(x86\\)\\\\Microsoft Visual Studio\\\\2019\\\\BuildTools\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\":*)",
+      "Bash(cmd.exe:*)",
+      "Bash(test:*)"
     ]
   }
 }
