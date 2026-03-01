@@ -2448,11 +2448,26 @@ int wmain(int argc, WCHAR** argv) {
 		(unsigned long long)AllowedPaths.size());
 
 	if (AllowedPaths.empty()) {
-		wchar_t cwd[MAX_PATH] = {};
-		DWORD cwdLen = GetCurrentDirectoryW(MAX_PATH, cwd);
-		if (cwdLen > 0 && cwdLen < MAX_PATH) {
-			AddAllowedPathUnique(std::wstring(cwd), PathAccessLevel::FullControl);
-			LogInfo(L"[Config] No allowPaths configured, defaulting to CWD: %ls", cwd);
+		// Try to use the directory of the executable to launch
+		std::wstring exePath = ResolveExeFullPath(ExeToLaunch);
+		std::wstring exeDir;
+		
+		if (!exePath.empty()) {
+			exeDir = GetParentDir(exePath);
+			if (!exeDir.empty() && DirectoryExists(exeDir)) {
+				AddAllowedPathUnique(exeDir, PathAccessLevel::FullControl);
+				LogInfo(L"[Config] No allowPaths configured, using exe directory: %ls", exeDir.c_str());
+			}
+		}
+		
+		// Fallback to current working directory if exe directory not found
+		if (AllowedPaths.empty()) {
+			wchar_t cwd[MAX_PATH] = {};
+			DWORD cwdLen = GetCurrentDirectoryW(MAX_PATH, cwd);
+			if (cwdLen > 0 && cwdLen < MAX_PATH) {
+				AddAllowedPathUnique(std::wstring(cwd), PathAccessLevel::FullControl);
+				LogInfo(L"[Config] No allowPaths configured, defaulting to CWD: %ls", cwd);
+			}
 		}
 	}
 

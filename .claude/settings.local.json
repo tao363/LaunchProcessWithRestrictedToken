@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(./LaunchProcessWithRestrictedToken.exe:*)",
+      "Bash(sleep 2:*)",
+      "Bash(ls:*)",
+      "Bash(./opencode.exe:*)"
+    ]
+  }
+}

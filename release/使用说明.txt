@@ -1,0 +1,17 @@
+# 使用说明
+
+## 运行 opencode.exe
+
+1. 将 opencode.exe 复制到此目录（release/）
+2. 根据需要修改 config.ini 配置文件
+3. 在 Visual Studio 中编译并运行 LaunchProcessWithRestrictedToken 项目
+
+## 配置说明
+
+config.ini 已配置为运行 opencode.exe，主要设置：
+- 工作目录: workspace/
+- 完整性级别: low
+- 启用日志: true
+- 等待程序退出: true
+
+如需修改配置，请编辑 config.ini 文件。

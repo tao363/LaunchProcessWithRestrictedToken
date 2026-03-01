@@ -1,68 +1,55 @@
-# 可执行文件
+# CMake 构建目录
+build/
+out/
+cmake-build-*/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# 编译输出
 *.exe
-*.EXE
 *.dll
-*.DLL
+*.lib
+*.obj
+*.o
+*.a
 *.so
 *.dylib
 
+# 调试文件
+*.pdb
+*.ilk
+*.idb
+
 # 日志文件
 *.log
-*.LOG
-logs/
-*.log.*
-
-# JSON 文件
-*.json
-*.JSON
-config.json
-appsettings.json
-package-lock.json
-
-# 编译输出
-bin/
-obj/
-Debug/
-Release/
-*.pdb
-*.user
-*.suo
+*.tlog
 
 # 临时文件
 *.tmp
 *.temp
-*.cache
-*.pid
-*.seed
-*.pid.lock
+*~
 
-# 系统文件
+# IDE 配置
+.vscode/
+.idea/
+*.code-workspace
+
+# 操作系统文件
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# IDE 文件
-.vscode/
-.idea/
+# 备份文件
+*.bak
 *.swp
 *.swo
-*~
 
-## Visual Studio
-.vs/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-
-## Build results
-[Dd]ebug/
-[Dd]ebugPublic/
-[Rr]elease/
-[Rr]eleases/
-x64/
-x86/
-build/
-bld/
-[Bb]in/
-[Oo]bj/
+# opencode 工作目录
+x64/Release/*
